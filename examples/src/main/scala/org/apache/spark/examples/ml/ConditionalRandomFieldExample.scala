@@ -47,8 +47,8 @@ object ConditionalRandomFieldExample {
     val test = args(2)
 
     // Creates a Spark context and a SQL context
-    val conf = new SparkConf().setAppName(s"${this.getClass.getSimpleName}")
-      .set(s"spark.yarn.jar", s"/home/hujiayin/git/spark/yarn/target/spark.yarn.jar")
+    val conf = new SparkConf().setAppName(s"${this.getClass.getSimpleName}").setMaster("local[4]")
+//      .set(s"spark.yarn.jar", s"/home/hujiayin/git/spark/yarn/target/spark.yarn.jar")
 
     val sc = new SparkContext(conf)
 
@@ -76,7 +76,7 @@ object ConditionalRandomFieldExample {
     val crf = new ConditionalRandomField()
     val model = crf.trainRdd(rowRDD, rowRddF, sc)
 
-    val modelPath = "/home/hujiayin/git/CRFConfig/CRFOutput"
+    val modelPath = "/Users/qhuang/Downloads/CRFConfig/CRFOutput"
     model.save(sc, modelPath)
 
     val rowRddT = sc.textFile(test).filter(_.nonEmpty).map(_.split("\t"))

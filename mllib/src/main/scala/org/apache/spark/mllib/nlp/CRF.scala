@@ -203,9 +203,10 @@ object CRF {
   def runCRF(templates: RDD[Array[String]],
              features: RDD[Array[String]]): CRFModel = {
     val template: Array[Array[String]] = templates.toLocalIterator.toArray
+    val featuresC = features.collect()
     sc = features.sparkContext
     val finalArray = features.flatMap { iter =>
-      val output: ArrayBuffer[Array[String]] = new ArrayBuffer[Array[String]]()
+      val output = new ArrayBuffer[Array[String]]()
       var i: Int = 0
       while (i < template.length) {
         val crf = new CRF()
@@ -215,6 +216,7 @@ object CRF {
       }
       output
     }.collect()
+//    val model = crf.learn(template, features)
     new CRFModel(finalArray)
   }
 
@@ -234,7 +236,7 @@ object CRF {
     sc = tests.sparkContext
     val finalArray = test.indices.map(idx => {
       val crf = new CRF()
-      val result: Array[String] = crf.verify(test(idx), model(idx))
+      val result: Array[String] = crf.verify(test(idx), model(0))
       result
     }).toArray
     new CRFModel(finalArray)

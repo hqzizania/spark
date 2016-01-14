@@ -74,7 +74,7 @@ private[mllib] class Node extends Serializable {
 
   def calExpectation(expected: ArrayBuffer[Double], Z: Double, size: Int,
                      featureIdx: FeatureIndex): Unit = {
-    val c: Double = math.exp(alpha + cost + beta - Z)
+    val c: Double = math.exp(alpha - cost + beta - Z)
     var pathObj: Path = new Path()
     var idx: Int = featureIdx.getFeatureCacheIdx(fvector)
     var i: Int = 0
