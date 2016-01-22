@@ -21,15 +21,14 @@ import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.rdd.RDD
 import org.apache.spark.SparkContext
 import scala.collection.mutable.ArrayBuffer
+import riso.numerical.LBFGS
 
-private[mllib] class CRF extends Serializable{
-  private val freq: Int = 1
+private[mllib] class CRF extends Serializable {
+  private val freq: Int = 1   //TODO add new feature for freq > 1
   private val maxiter: Int = 100000
-  private val cost: Double = 1.0
+//  private val cost: Double = 1.0
   private val eta: Double = 0.0001
-  private val C: Float = 1
-  private val threadNum: Int = Runtime.getRuntime.availableProcessors()
-  private val threadPool: Array[CRFThread] = new Array[CRFThread](threadNum)
+  private val C: Double = 1.0   //TODO C can be set by user
   private var featureIdx: FeatureIndex = new FeatureIndex()
 
 
@@ -57,19 +56,29 @@ private[mllib] class CRF extends Serializable{
    * @return the model of the source
    */
   def learn(template: Array[String],
-            train: Array[String]): Array[String] = {
-    var tagger: Tagger = new Tagger()
+            train: RDD[Array[String]]): Array[ArrayBuffer[String]] = {
     var taggerList: ArrayBuffer[Tagger] = new ArrayBuffer[Tagger]()
     featureIdx.openTemplate(template)
-    featureIdx = featureIdx.openTagSet(train)
-    tagger.open(featureIdx)
-    tagger = tagger.read(train)
-    featureIdx.buildFeatures(tagger)
-    taggerList += tagger
-    tagger = null
+
+    var i = 0
+    val trainC: Array[Array[String]] = train.toLocalIterator.toArray
+    while (i < trainC.size) {
+      featureIdx.openTagSet(trainC(i))
+      i += 1
+    }
+    i = 0
+    featureIdx.y = featureIdx.y.distinct
+    while (i < trainC.size) {
+      var tagger: Tagger = new Tagger()
+      tagger.open(featureIdx)
+      tagger = tagger.read(trainC(i))
+      featureIdx.buildFeatures(tagger)
+      if (tagger != null) taggerList.append(tagger)
+      i += 1
+    }
     featureIdx.shrink(freq)
     featureIdx.initAlpha(featureIdx.maxid)
-    runCRF(taggerList, featureIdx, featureIdx.alpha)
+    runCRF(taggerList, featureIdx, train.sparkContext)
     featureIdx.saveModel
   }
 
@@ -77,61 +86,85 @@ private[mllib] class CRF extends Serializable{
    * Parse segments in the unit sentences or paragraphs
    * @param tagger the tagger in the template
    * @param featureIndex the index of the feature
-   * @param alpha the model
    */
 
   def runCRF(tagger: ArrayBuffer[Tagger], featureIndex: FeatureIndex,
-             alpha: ArrayBuffer[Double]): Unit = {
+             sc: SparkContext): Unit = {
     var diff: Double = 0.0
     var old_obj: Double = 1e37
     var converge: Int = 0
     var itr: Int = 0
     var all: Int = 0
-    val opt = new Optimizer()
+//    val opt = new Optimizer()
     var i: Int = 0
-    var k: Int = 0
+    val iFlag: Array[Int] = Array(0)
+    val diagH = Array.fill(featureIdx.maxid)(0.0)
+    val iPrint = Array(-1,0)
+    val xTol = 1.0E-16
+//    while (i < tagger.length) {
+//      all += tagger(i).x.size
+//      i += 1
+//    }
+//    i = 0
+    tagger.foreach(all += _.x.size)
 
-    while (i < tagger.length) {
-      all += tagger(i).x.size
-      i += 1
-    }
-    i = 0
 
-    while (itr <= maxiter) {
-      while (i < threadNum) {
-        threadPool(i) = new CRFThread()
-        threadPool(i).start_i = i
-        threadPool(i).size = tagger.size
-        threadPool(i).x = tagger
-        threadPool(i).start()
-        threadPool(i).join()
-        if (i > 0) {
-          threadPool(0).obj += threadPool(i).obj
-          threadPool(0).err += threadPool(i).err
-          threadPool(0).zeroOne += threadPool(i).zeroOne
+    //    val taggers: RDD[Tagger] = sc.parallelize(tagger, 2)  //TODO add RDD[Tagger]
+
+    while (itr < maxiter) {
+
+      var x: ArrayBuffer[Tagger] = tagger
+      var err: Int = 0
+      var zeroOne: Int = 0
+      var size: Int = 0
+      var obj: Double = 0.0
+      val expected: Array[Double] = Array.fill(featureIdx.maxid)(0.0)
+      var expected3: ArrayBuffer[Double] = new ArrayBuffer[Double]()
+      expected.copyToBuffer(expected3)
+//      var expected: ArrayBuffer[Double] = new ArrayBuffer[Double]()
+      var idx: Int = 0
+
+
+
+//      initExpected()
+      while (idx >= 0 && idx < tagger.size) {
+        val expected: Array[Double] = Array.fill(featureIdx.maxid)(0.0)
+        var expected2: ArrayBuffer[Double] = new ArrayBuffer[Double]()
+        expected.copyToBuffer(expected2)
+        obj += x(idx).gradient(expected2)
+        val err_num = x(idx).eval()
+        err += err_num
+        if (err_num != 0) {
+          zeroOne += 1
         }
-        while (k < featureIndex.maxid) {
-          if (i > 0) {
-            threadPool(0).expected(k) += threadPool(i).expected(k)
-          }
-          threadPool(0).obj += alpha(k) * alpha(k) / 2.0 * C
-          threadPool(0).expected(k) += alpha(k) / C
-          k += 1
+        idx += 1
+
+        var xx = 0
+        while (xx < featureIdx.maxid){
+          expected3(xx) += expected2(xx)
+          xx += 1
         }
-        k = 0
-        i += 1
       }
+
+      var k: Int = 0
+      while (k < featureIndex.maxid) {
+        obj += featureIdx.alpha(k) * featureIdx.alpha(k) / (2.0 * C)
+        expected3(k) += featureIdx.alpha(k) / C
+        k += 1
+      }
+      k = 0
+
       i = 0
       if (itr == 0) {
         diff = 1.0
       } else {
-        diff = math.abs((old_obj - threadPool(0).obj) / old_obj)
+        diff = math.abs((old_obj - obj) / old_obj)
       }
-      old_obj = threadPool(0).obj
+      old_obj = obj
       printf("iter=%d, terr=%2.5f, serr=%2.5f, act=%d, obj=%2.5f,diff=%2.5f\n",
-        itr, 1.0 * threadPool(0).err / all,
-        1.0 * threadPool(0).zeroOne / tagger.size, featureIndex.maxid,
-        threadPool(0).obj, diff)
+        itr, 1.0 * err / all,
+        1.0 * zeroOne / tagger.size, featureIndex.maxid,
+        obj, diff)
       if (diff < eta) {
         converge += 1
       } else {
@@ -140,52 +173,19 @@ private[mllib] class CRF extends Serializable{
       if (converge == 3) {
         itr = maxiter + 1 // break
       }
-      if (diff == 0) {
-        itr = maxiter + 1 // break
-      }
-      opt.optimizer(featureIndex.maxid, alpha, threadPool(0).obj, threadPool(0).expected, C)
+
+
+
+
+      LBFGS.lbfgs(featureIdx.maxid, 5, featureIdx.alpha, obj, expected3.toArray, false, diagH, iPrint, 1e-7, xTol, iFlag)
+//      opt.optimizer(featureIndex.maxid, alpha, obj, expected3, C)
+
+
       itr += 1
     }
   }
-
-  /**
-   * Use multiple threads to parse the segments
-   * in a unit sentence or paragraph.
-   */
-  class CRFThread extends Thread {
-    var x: ArrayBuffer[Tagger] = null
-    var start_i: Int = 0
-    var err: Int = 0
-    var zeroOne: Int = 0
-    var size: Int = 0
-    var obj: Double = 0.0
-    var expected: ArrayBuffer[Double] = new ArrayBuffer[Double]()
-
-    def initExpected(): Unit = {
-      var i: Int = 0
-      while (i < featureIdx.maxid) {
-        expected.append(0.0)
-        i += 1
-      }
-    }
-
-    /**
-     * Train CRF model and calculate the expectations
-     */
-    override def run(): Unit = {
-      var idx: Int = 0
-      initExpected()
-      while (idx >= start_i && idx < size) {
-        obj += x(idx).gradient(expected)
-        err += x(idx).eval()
-        if (err != 0) {
-          zeroOne += 1
-        }
-        idx = idx + threadNum
-      }
-    }
-  }
 }
+
 
 @DeveloperApi
 object CRF {
@@ -202,22 +202,10 @@ object CRF {
    */
   def runCRF(templates: RDD[Array[String]],
              features: RDD[Array[String]]): CRFModel = {
-    val template: Array[Array[String]] = templates.toLocalIterator.toArray
-    val featuresC = features.collect()
-    sc = features.sparkContext
-    val finalArray = features.flatMap { iter =>
-      val output = new ArrayBuffer[Array[String]]()
-      var i: Int = 0
-      while (i < template.length) {
-        val crf = new CRF()
-        val model: Array[String] = crf.learn(template(i), iter)
-        output.append(model)
-        i += 1
-      }
-      output
-    }.collect()
-//    val model = crf.learn(template, features)
-    new CRFModel(finalArray)
+    val template = templates.toLocalIterator.toArray.flatten
+    val crf = new CRF()
+    val model = crf.learn(template, features)
+    new CRFModel(model)
   }
 
   /**
@@ -231,14 +219,16 @@ object CRF {
    */
   def verifyCRF(tests: RDD[Array[String]],
                 models: RDD[Array[String]]): CRFModel = {
-    val test: Array[Array[String]] = tests.toLocalIterator.toArray
-    val model: Array[Array[String]] = models.toLocalIterator.toArray
+//    val test: Array[Array[String]] = tests.toLocalIterator.toArray
+    val model: Array[String] = models.toLocalIterator.toArray.flatten
     sc = tests.sparkContext
-    val finalArray = test.indices.map(idx => {
+    val finalArray: Array[ArrayBuffer[String]] = tests.map(x => {
       val crf = new CRF()
-      val result: Array[String] = crf.verify(test(idx), model(0))
-      result
-    }).toArray
+      val a = new ArrayBuffer[String]()
+      val result: Array[String] = crf.verify(x, model)
+      result.copyToBuffer(a)
+      a
+    }).collect()
     new CRFModel(finalArray)
   }
 

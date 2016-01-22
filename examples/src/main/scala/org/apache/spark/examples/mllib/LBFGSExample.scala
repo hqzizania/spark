@@ -23,7 +23,10 @@ import org.apache.spark.mllib.classification.LogisticRegressionModel
 import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.optimization.{LBFGS, LogisticGradient, SquaredL2Updater}
+import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.mllib.util.MLUtils
+import org.apache.spark.rdd.RDD
+
 // $example off$
 
 import org.apache.spark.{SparkConf, SparkContext}
@@ -32,11 +35,11 @@ object LBFGSExample {
 
   def main(args: Array[String]): Unit = {
 
-    val conf = new SparkConf().setAppName("LBFGSExample")
+    val conf = new SparkConf().setAppName("LBFGSExample").setMaster("local[2]")
     val sc = new SparkContext(conf)
 
     // $example on$
-    val data = MLUtils.loadLibSVMFile(sc, "data/mllib/sample_libsvm_data.txt")
+    val data: RDD[LabeledPoint] = MLUtils.loadLibSVMFile(sc, "data/mllib/sample_libsvm_data.txt")
     val numFeatures = data.take(1)(0).features.size
 
     // Split data into training (60%) and test (40%).

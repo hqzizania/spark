@@ -20,11 +20,14 @@ package org.apache.spark.examples.ml
 import org.apache.spark.ml.nlp.ConditionalRandomField
 import org.apache.spark.mllib.linalg.{VectorUDT}
 import org.apache.spark.mllib.nlp.{CRF, CRFModel}
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.ScalaReflection
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.types.{StructType, ArrayType, StructField}
 import org.apache.spark.sql.{Row, SQLContext}
 import org.apache.spark.{SparkContext, SparkConf}
+
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * An example demonstrating a CRF.
@@ -76,24 +79,40 @@ object ConditionalRandomFieldExample {
     val crf = new ConditionalRandomField()
     val model = crf.trainRdd(rowRDD, rowRddF, sc)
 
-    val modelPath = "/Users/qhuang/Downloads/CRFConfig/CRFOutput"
-    model.save(sc, modelPath)
 
+    val modelPath = "/Users/qhuang/Downloads/CRFConfig/CRFOutput"
+
+    model.save(sc, modelPath)
+//
     val rowRddT = sc.textFile(test).filter(_.nonEmpty).map(_.split("\t"))
-    val modelRDD = sc.parallelize(model.load(sc, modelPath).CRFSeries)
-    val newResult = CRF.verifyCRF(rowRddT, modelRDD)
-    var idx: Int = 0
-    var temp: String = ""
-    while (idx < newResult.CRFSeries(0).length) {
-      temp += newResult.CRFSeries(0)(idx)
-      if ((idx + 1) % 3 == 0) {
-        // scalastyle:off println
-        println(temp)
-        // scalastyle:on println
-        temp = ""
+    val modelRDD = sc.parallelize(model.load(sc, modelPath).CRFSeries).map(_.toArray)
+    val newResult: CRFModel = CRF.verifyCRF(rowRddT, modelRDD)
+
+    var i = 0
+    var j = 0
+    var right = 0
+    var total = 0
+    while (i < newResult.CRFSeries.length){
+      while(j < newResult.CRFSeries(i).length) {
+        if (newResult.CRFSeries(i)(j+2) == newResult.CRFSeries(i)(j+3)) right += 1
+        total += 1
+        j += 4
       }
-      idx += 1
+      j = 0
+      i += 1
     }
+//    var idx: Int = 0
+//    var temp: String = ""
+//    while (idx < newResult.CRFSeries(0).length) {
+//      temp += newResult.CRFSeries(0)(idx)
+//      if ((idx + 1) % 3 == 0) {
+//        // scalastyle:off println
+//        println(temp)
+//        // scalastyle:on println
+//        temp = ""
+//      }
+//      idx += 1
+//    }
 
     sc.stop()
   }

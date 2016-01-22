@@ -39,8 +39,9 @@ private[mllib] class Path extends Serializable {
                      size: Int, fCache: ArrayBuffer[Int],
                      featureIdx: FeatureIndex): Unit = {
     val c: Double = math.exp(lnode.alpha + cost + rnode.beta - Z)
-    var idx: Int = 0
-    idx = featureIdx.getFeatureCacheIdx(fvector)
+//    var idx: Int = 0
+//    idx = featureIdx.getFeatureCacheIdx(fvector)
+    var idx: Int = fvector
 
     while (fCache(idx) != -1) {
       expected(fCache(idx) + lnode.y * size + rnode.y) += c

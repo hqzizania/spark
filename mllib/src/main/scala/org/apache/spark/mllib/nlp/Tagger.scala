@@ -16,6 +16,8 @@
  */
 package org.apache.spark.mllib.nlp
 
+import breeze.numerics.{exp, log}
+
 import scala.collection.mutable.ArrayBuffer
 
 private[mllib] class Tagger extends Serializable {
@@ -59,18 +61,21 @@ private[mllib] class Tagger extends Serializable {
         && lines(i).charAt(0) != '\t') {
         columns = lines(i).split('|')
         x.append(columns)
-        while (j < ysize) {
-          if (feature_idx.y(j) == columns(feature_idx.xsize)) {
-            answer.append(j)
-            j = ysize // break
-          }
-          j += 1
-        }
-        j = 0
+//        while (j < ysize) {
+//          if (feature_idx.y(j) == columns(feature_idx.xsize)) {
+//            answer.append(j)
+//            j = ysize // break
+//          }
+//          j += 1
+//        }
+//        j = 0
+        for(y <- feature_idx.y if y.equalsIgnoreCase(columns(feature_idx.xsize)))
+          answer.append(feature_idx.y.indexOf(y))
         result.append(0)
       }
       i += 1
     }
+    //TODO node_[s].resize(ysize_);
     this
   }
 
@@ -96,8 +101,10 @@ private[mllib] class Tagger extends Serializable {
       while (i < x.length) {
         while (j < ysize) {
           node(i)(j) = feature_idx.calcCost(node(i)(j))
+//          printf( "node.cost = %2.5f\n", node(i)(j).cost)
           while (k < node(i)(j).lpath.length) {
             node(i)(j).lpath(k) = feature_idx.calcCost(node(i)(j).lpath(k))
+//            printf( "path.cost = %2.5f\n", node(i)(j).lpath(k).cost)
             k += 1
           }
           k = 0
@@ -107,18 +114,18 @@ private[mllib] class Tagger extends Serializable {
         i += 1
       }
     }
-    i = 0
-    j = 0
-    if (penalty.nonEmpty) {
-      while (i < x.length) {
-        while (j < ysize) {
-          node(i)(j).cost += penalty(i)(j)
-          j += 1
-        }
-        j = 0
-        i += 1
-      }
-    }
+//    i = 0
+//    j = 0
+//    if (penalty.nonEmpty) {
+//      while (i < x.length) {
+//        while (j < ysize) {
+//          node(i)(j).cost += penalty(i)(j)
+//          j += 1
+//        }
+//        j = 0
+//        i += 1
+//      }
+//    }
   }
 
   /**
@@ -233,34 +240,38 @@ private[mllib] class Tagger extends Serializable {
     while (i < x.length) {
       while (j < ysize) {
         node(i)(j).calExpectation(expected, Z, ysize, feature_idx)
+//        printf("node(%d)(%d) = %2.5f\n", i, j, node(i)(j).cost)
         j += 1
+
       }
       j = 0
       i += 1
     }
+
     i = 0
     j = 0
     while (row < x.length) {
-      idx = node(row)(answer(row)).fvector
-      rIdx = feature_idx.getFeatureCacheIdx(node(row)(answer(row)).fvector)
+//      idx = node(row)(answer(row)).fvector
+//      rIdx = feature_idx.getFeatureCacheIdx(node(row)(answer(row)).fvector)
+      rIdx = node(row)(answer(row)).fvector
       while (feature_idx.featureCache(rIdx) != -1) {
-        expected(feature_idx.featureCache(rIdx) + answer(row)) -= 1
+        expected(feature_idx.featureCache(rIdx) + answer(row)) -= 1.0
         rIdx += 1
       }
-      rIdx = 0
+//      rIdx = 0
       s += node(row)(answer(row)).cost
       while (i < node(row)(answer(row)).lpath.length) {
         lNode = node(row)(answer(row)).lpath(i).lnode
         rNode = node(row)(answer(row)).lpath(i).rnode
         lPath = node(row)(answer(row)).lpath(i)
         if (lNode.y == answer(lNode.x)) {
-          idx = lPath.fvector
-          rIdx = feature_idx.getFeatureCacheIdx(lPath.fvector)
+//          idx = lPath.fvector
+//          rIdx = feature_idx.getFeatureCacheIdx(lPath.fvector)
+          rIdx = lPath.fvector
           while (feature_idx.featureCache(rIdx) != -1) {
-            expected(feature_idx.featureCache(rIdx) + lNode.y * ysize + rNode.y) -= 1
+            expected(feature_idx.featureCache(rIdx) + lNode.y * ysize + rNode.y) -= 1.0
             rIdx += 1
           }
-          rIdx = 0
           s += lPath.cost
         }
         i += 1
@@ -268,7 +279,6 @@ private[mllib] class Tagger extends Serializable {
       i = 0
       row += 1
     }
-    i = 0
     viterbi()
     Z - s
   }
@@ -295,7 +305,7 @@ private[mllib] class Tagger extends Serializable {
     if (vMax > vMin + MINUS_LOG_EPSILON) {
       vMax
     } else {
-      vMax + math.log(math.exp(vMin - vMax) + 1.0)
+      vMax + log(exp(vMin - vMax) + 1.0)
     }
   }
 
@@ -320,7 +330,11 @@ private[mllib] class Tagger extends Serializable {
     var content: ArrayBuffer[String] = new ArrayBuffer[String]
     while (i < x.size) {
       while (j < x(i).length) {
-        content.append(x(i)(j) + "|")
+        if(j == x(i).length - 1){
+          content.append(x(i)(j))
+        }
+        else
+          content.append(x(i)(j) + "|")
         j += 1
       }
       content += feature_idx.y(result(i))

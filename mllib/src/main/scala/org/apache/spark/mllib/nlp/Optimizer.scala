@@ -18,7 +18,8 @@ package org.apache.spark.mllib.nlp
 
 import scala.collection.mutable.ArrayBuffer
 
-private[mllib] class Optimizer {
+
+private[nlp] class Optimizer {
 
   private var w: ArrayBuffer[Double] = new ArrayBuffer[Double]()
   private var v: ArrayBuffer[Double] = new ArrayBuffer[Double]()
@@ -63,7 +64,7 @@ private[mllib] class Optimizer {
 
 
   def optimizer(size: Int, x: ArrayBuffer[Double], f: Double,
-            g: ArrayBuffer[Double], C: Float): Unit = {
+            g: ArrayBuffer[Double], C: Double): Unit = {
     val msize: Int = 5
     var bound: Int = 0
     var ys: Double = 0.0

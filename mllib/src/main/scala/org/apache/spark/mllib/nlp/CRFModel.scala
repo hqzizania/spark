@@ -19,6 +19,7 @@ package org.apache.spark.mllib.nlp
 import org.apache.spark.mllib.pmml.PMMLExportable
 import org.apache.spark.mllib.util.{Loader, Saveable}
 import org.apache.spark.SparkContext
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{ScalaReflection}
 import org.apache.spark.sql.{Row, SQLContext}
 import org.apache.spark.sql.types.{ArrayType, StructType, StructField}
@@ -30,7 +31,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.io.Path
 
-class CRFModel(val CRFSeries: Array[Array[String]])
+class CRFModel(val CRFSeries: Array[ArrayBuffer[String]])
   extends Saveable with Serializable with PMMLExportable {
   override def save(sc: SparkContext, path: String): Unit = {
     CRFModel.SaveLoadV1_0.save(sc, this, path)
@@ -62,31 +63,43 @@ object CRFModel extends Loader[CRFModel] {
         p.deleteRecursively()
       }
       val sqlContext = new SQLContext(sc)
-      val metadata = compact(render(
+      val metadata: String = compact(render(
         ("class" -> thisClassName) ~ ("version" -> thisFormatVersion)))
-      sc.parallelize(Seq(metadata), 1).saveAsTextFile(Loader.metadataPath(path))
-      val itemType = ScalaReflection.schemaFor[String].dataType
-      val fields = Array(StructField("Values", ArrayType(itemType)))
-      val schema = StructType(fields)
-      val dataRDD = sc.parallelize(model.CRFSeries).map { x => Row(x) }
-      sqlContext.createDataFrame(dataRDD, schema).write.parquet(Loader.dataPath(path))
+//      sc.parallelize(Seq(metadata), 1).saveAsTextFile(Loader.metadataPath(path))
+      sc.parallelize(model.CRFSeries(0), 1).saveAsTextFile(Loader.dataPath(path))
+      sc.parallelize(model.CRFSeries(1), 1).saveAsTextFile(Loader.metadataPath(path))
+//      val itemType = ScalaReflection.schemaFor[String].dataType
+//      val fields = Array(StructField("Values", ArrayType(itemType)))
+//      val schema = StructType(fields)
+//      val dataRDD = sc.parallelize(model.CRFSeries).map { x => Row(x) }
+//      sqlContext.createDataFrame(dataRDD, schema).write.parquet(Loader.dataPath(path))
     }
 
     def load(sc: SparkContext, path: String): CRFModel = {
-      implicit val formats = DefaultFormats
-      val sqlContext = new SQLContext(sc)
-      val (className, formatVersion, _) = Loader.loadMetadata(sc, path)
-      assert(className == thisClassName)
-      assert(formatVersion == thisFormatVersion)
-      val crfSeries = sqlContext.read.parquet(Loader.dataPath(path))
-      val models: ArrayBuffer[Array[String]] = new ArrayBuffer[Array[String]]
-      var idx: Int = 0
-      while (idx < crfSeries.collect().length) {
-        models.append(crfSeries.collect()(idx).getAs("Values").
-          asInstanceOf[mutable.WrappedArray[String]].toArray)
-        idx = idx + 1
-      }
-      new CRFModel(models.toArray)
+//      implicit val formats = DefaultFormats
+//      val sqlContext = new SQLContext(sc)
+//      val (className, formatVersion, _) = Loader.loadMetadata(sc, path)
+//      assert(className == thisClassName)
+//      assert(formatVersion == thisFormatVersion)
+//      val crfSeries = sqlContext.read.parquet(Loader.dataPath(path))
+      val crfSeries: Array[ArrayBuffer[String]] = sc.textFile(Loader.dataPath(path)).map(_.split("\n"))
+        .map{x =>
+            val y = new ArrayBuffer[String]
+            x.copyToBuffer(y)
+            y}
+        .collect()
+//      val models: Array[ArrayBuffer[String]] = new Array[ArrayBuffer[String]](crfSeries.length)
+//      crfSeries.map{x =>
+//        val y = new ArrayBuffer[String]
+//        x.copyToBuffer(y)
+//        y}
+//      var idx: Int = 0
+//      while (idx < crfSeries.length) {
+//        models.append(crfSeries(idx))
+//        idx = idx + 1
+//      }
+
+      new CRFModel(crfSeries)
     }
   }
 

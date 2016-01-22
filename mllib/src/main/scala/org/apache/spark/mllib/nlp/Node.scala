@@ -16,6 +16,8 @@
  */
 package org.apache.spark.mllib.nlp
 
+import breeze.numerics.{log, exp}
+
 import scala.collection.mutable.ArrayBuffer
 
 private[mllib] class Node extends Serializable {
@@ -30,8 +32,8 @@ private[mllib] class Node extends Serializable {
   var fIdx: Int = 0
   var lpath: ArrayBuffer[Path] = new ArrayBuffer[Path]()
   var rpath: ArrayBuffer[Path] = new ArrayBuffer[Path]()
-  val MINUS_LOG_EPSILON = 50
-  var featureCache: ArrayBuffer[Int] = new ArrayBuffer[Int]()
+  val MINUS_LOG_EPSILON = 50.0
+  var featureCache: ArrayBuffer[Int] = new ArrayBuffer[Int]() //TODO is this needed?
 
   object Node {
     val node = new Node
@@ -42,19 +44,21 @@ private[mllib] class Node extends Serializable {
   }
 
   def logsumexp(x: Double, y: Double, flg: Boolean): Double = {
-    if (flg) return y
-    val vMin: Double = math.min(x, y)
-    val vMax: Double = math.max(x, y)
-    if (vMax > vMin + MINUS_LOG_EPSILON) {
-      vMax
-    } else {
-      vMax + math.log(math.exp(vMin - vMax) + 1.0)
+    if (flg) y
+    else {
+      val vMin: Double = math.min(x, y)
+      val vMax: Double = math.max(x, y)
+      if (vMax > (vMin + MINUS_LOG_EPSILON)) {
+        vMax
+      } else {
+        vMax + log(exp(vMin - vMax) + 1.0)
+      }
     }
   }
 
   def calcAlpha(): Unit = {
     var i: Int = 0
-    alpha = 0
+    alpha = 0.0
     while (i < lpath.length) {
       alpha = logsumexp(alpha, lpath(i).cost + lpath(i).lnode.alpha, i == 0)
       i += 1
@@ -64,7 +68,7 @@ private[mllib] class Node extends Serializable {
 
   def calcBeta(): Unit = {
     var i: Int = 0
-    beta = 0
+    beta = 0.0
     while (i < rpath.length) {
       beta = logsumexp(beta, rpath(i).cost + rpath(i).rnode.beta, i == 0)
       i += 1
@@ -74,13 +78,15 @@ private[mllib] class Node extends Serializable {
 
   def calExpectation(expected: ArrayBuffer[Double], Z: Double, size: Int,
                      featureIdx: FeatureIndex): Unit = {
-    val c: Double = math.exp(alpha - cost + beta - Z)
+    val c: Double = math.exp(alpha + beta -cost - Z)
+//    printf("alpha = %2.5f, beta = %2.5f, cost = %2.5f\n", alpha, beta, cost)
     var pathObj: Path = new Path()
-    var idx: Int = featureIdx.getFeatureCacheIdx(fvector)
+//    var idx: Int = featureIdx.getFeatureCacheIdx(fvector)
+    var idx: Int = fvector
     var i: Int = 0
-    featureCache = featureIdx.getFeatureCache()
+    val featureCache = featureIdx.getFeatureCache()
     while (featureCache(idx) != -1) {
-      expected.update(featureCache(idx) + y, c)
+      expected(featureCache(idx) + y) += c
       idx += 1
     }
     while (i < lpath.length) {
@@ -88,6 +94,7 @@ private[mllib] class Node extends Serializable {
       pathObj.calExpectation(expected, Z, size, featureCache, featureIdx)
       i += 1
     }
+//    var jjj = 0
   }
 
   def clear(): Unit = {
