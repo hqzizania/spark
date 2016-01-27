@@ -61,15 +61,7 @@ private[mllib] class Tagger extends Serializable {
         && lines(i).charAt(0) != '\t') {
         columns = lines(i).split('|')
         x.append(columns)
-//        while (j < ysize) {
-//          if (feature_idx.y(j) == columns(feature_idx.xsize)) {
-//            answer.append(j)
-//            j = ysize // break
-//          }
-//          j += 1
-//        }
-//        j = 0
-        for(y <- feature_idx.y if y.equalsIgnoreCase(columns(feature_idx.xsize)))
+        for(y <- feature_idx.y if y.equals(columns(feature_idx.xsize)))
           answer.append(feature_idx.y.indexOf(y))
         result.append(0)
       }
@@ -290,6 +282,7 @@ private[mllib] class Tagger extends Serializable {
       if (answer(i) != result(i)) {
         err += 1
       }
+//      printf("answer[%d] = %d, result[%d] = %d\n", i, answer(i), i, result(i))
       i += 1
     }
     err

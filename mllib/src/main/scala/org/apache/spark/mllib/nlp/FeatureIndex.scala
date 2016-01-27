@@ -25,7 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 private[mllib] class FeatureIndex extends Serializable {
   var maxid: Int = 0
   var alpha: Array[Double] = Array[Double]()
-  var cost_factor: Double = 0.0
+  var cost_factor: Double = 1.0  //TODO add option
   var xsize: Int = 0
   var check_max_xsize: Boolean = false
   var max_xsize: Int = 0
@@ -284,13 +284,15 @@ private[mllib] class FeatureIndex extends Serializable {
     while (i < src.length) {
       if (src.charAt(i) == '%') {
         if (src.charAt(i + 1) == 'x') {
-          r = getIndex(src.substring(i + 2), idx, tagger)
+          val (rx, ix) = getIndex(src.substring(i + 2), idx, tagger)
+          r = rx
+          i += ix + 2
           if (r == null) {
             return null
           }
           dest += r
         }
-        i = src.length
+//        i = src.length
       } else {
         dest += src.charAt(i)
       }
@@ -299,7 +301,7 @@ private[mllib] class FeatureIndex extends Serializable {
     dest
   }
 
-  def getIndex(src: String, pos: Int, tagger: Tagger): String = {
+  def getIndex(src: String, pos: Int, tagger: Tagger): (String, Int) = {
     var neg: Int = 1
     var col: Int = 0
     var row: Int = 0
@@ -307,8 +309,9 @@ private[mllib] class FeatureIndex extends Serializable {
     var rtn: String = null
     var encol: Boolean = false
     var i: Int = 0
+    var x_end: Int = 0
     if (src.charAt(0) != '[') {
-      return null
+      return (null, x_end)
     }
     i += 1
     if (src.charAt(1) == '-') {
@@ -325,6 +328,7 @@ private[mllib] class FeatureIndex extends Serializable {
       } else if (src.charAt(i) == ',') {
         encol = true
       } else if (src.charAt(i) == ']') {
+        x_end = i
         i = src.length // break
       }
       i += 1
@@ -332,19 +336,19 @@ private[mllib] class FeatureIndex extends Serializable {
     row *= neg
     if (row < -kMaxContextSize || row > kMaxContextSize ||
       col < 0 || col >= xsize) {
-      return null
+      return (null, x_end)
     }
 
     max_xsize = math.max(max_xsize, col + 1)
 
     idx = pos + row
     if (idx < 0) {
-      return BOS(-idx - 1)
+      return (BOS(-idx - 1), x_end)
     }
     if (idx >= tagger.x.size) {
-      return EOS(idx - tagger.x.size)
+      return (EOS(idx - tagger.x.size), x_end)
     }
-    tagger.x(idx)(col)
+    (tagger.x(idx)(col), x_end)
   }
 
 //  def setAlpha(_alpha: ArrayBuffer[Double]): Unit = {
@@ -431,7 +435,7 @@ private[mllib] class FeatureIndex extends Serializable {
     contents.append(template)
     i = 0
     while (i < keys.size) {
-      contents.append(keys(i) + " " + values(i))
+      contents.append(values(i) + " " + keys(i))
       i += 1
     }
     i = 0

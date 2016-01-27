@@ -39,12 +39,18 @@ private[mllib] class CRF extends Serializable {
    * @return the source with predictive labels
    */
   def verify(test: Array[String],
-             model: Array[String]): Array[String] = {
+             model: Array[String],
+              featureIdx2: FeatureIndex): Array[String] = {
     var tagger: Tagger = new Tagger()
-    // featureIdx = featureIdx.openTagSet(test)
-    tagger = tagger.read(test)
-    featureIdx = featureIdx.openFromArray(model)
+//    featureIdx = featureIdx.openTagSet(test)
+    featureIdx = featureIdx2.openFromArray(model)
     tagger.open(featureIdx)
+    tagger = tagger.read(test)
+//    featureIdx.featureCache.clear()
+//    featureIdx.featureCacheH.clear()
+//    featureIdx.buildFeatures(tagger)
+
+
     tagger.parse()
     tagger.createOutput()
   }
@@ -56,7 +62,7 @@ private[mllib] class CRF extends Serializable {
    * @return the model of the source
    */
   def learn(template: Array[String],
-            train: RDD[Array[String]]): Array[ArrayBuffer[String]] = {
+            train: RDD[Array[String]]) = {
     var taggerList: ArrayBuffer[Tagger] = new ArrayBuffer[Tagger]()
     featureIdx.openTemplate(template)
 
@@ -79,7 +85,7 @@ private[mllib] class CRF extends Serializable {
     featureIdx.shrink(freq)
     featureIdx.initAlpha(featureIdx.maxid)
     runCRF(taggerList, featureIdx, train.sparkContext)
-    featureIdx.saveModel
+    (featureIdx.saveModel, featureIdx)
   }
 
   /**
@@ -147,6 +153,7 @@ private[mllib] class CRF extends Serializable {
       }
 
       var k: Int = 0
+      var act = 0
       while (k < featureIndex.maxid) {
         obj += featureIdx.alpha(k) * featureIdx.alpha(k) / (2.0 * C)
         expected3(k) += featureIdx.alpha(k) / C
@@ -161,6 +168,7 @@ private[mllib] class CRF extends Serializable {
         diff = math.abs((old_obj - obj) / old_obj)
       }
       old_obj = obj
+//      printf("err = %d, all = %d",err, all)
       printf("iter=%d, terr=%2.5f, serr=%2.5f, act=%d, obj=%2.5f,diff=%2.5f\n",
         itr, 1.0 * err / all,
         1.0 * zeroOne / tagger.size, featureIndex.maxid,
@@ -177,7 +185,7 @@ private[mllib] class CRF extends Serializable {
 
 
 
-      LBFGS.lbfgs(featureIdx.maxid, 5, featureIdx.alpha, obj, expected3.toArray, false, diagH, iPrint, 1e-7, xTol, iFlag)
+      LBFGS.lbfgs(featureIdx.maxid, 5, featureIdx.alpha, obj, expected3.toArray, false, diagH, iPrint, 1e-3, xTol, iFlag)
 //      opt.optimizer(featureIndex.maxid, alpha, obj, expected3, C)
 
 
@@ -204,8 +212,8 @@ object CRF {
              features: RDD[Array[String]]): CRFModel = {
     val template = templates.toLocalIterator.toArray.flatten
     val crf = new CRF()
-    val model = crf.learn(template, features)
-    new CRFModel(model)
+    val (model, featureIdx) = crf.learn(template, features)
+    new CRFModel(model, featureIdx)
   }
 
   /**
@@ -218,18 +226,19 @@ object CRF {
    * @return Source files with the predictive labels
    */
   def verifyCRF(tests: RDD[Array[String]],
-                models: RDD[Array[String]]): CRFModel = {
+                models: RDD[Array[String]],
+                 featureIdx: FeatureIndex): CRFModel = {
 //    val test: Array[Array[String]] = tests.toLocalIterator.toArray
     val model: Array[String] = models.toLocalIterator.toArray.flatten
     sc = tests.sparkContext
     val finalArray: Array[ArrayBuffer[String]] = tests.map(x => {
       val crf = new CRF()
       val a = new ArrayBuffer[String]()
-      val result: Array[String] = crf.verify(x, model)
+      val result: Array[String] = crf.verify(x, model, featureIdx)
       result.copyToBuffer(a)
       a
     }).collect()
-    new CRFModel(finalArray)
+    new CRFModel(finalArray, featureIdx)
   }
 
   /**

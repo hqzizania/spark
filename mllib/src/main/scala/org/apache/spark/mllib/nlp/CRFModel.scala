@@ -31,7 +31,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.io.Path
 
-class CRFModel(val CRFSeries: Array[ArrayBuffer[String]])
+class CRFModel(val CRFSeries: Array[ArrayBuffer[String]], val featureIdx: FeatureIndex)
   extends Saveable with Serializable with PMMLExportable {
   override def save(sc: SparkContext, path: String): Unit = {
     CRFModel.SaveLoadV1_0.save(sc, this, path)
@@ -99,7 +99,7 @@ object CRFModel extends Loader[CRFModel] {
 //        idx = idx + 1
 //      }
 
-      new CRFModel(crfSeries)
+      new CRFModel(crfSeries, new FeatureIndex)
     }
   }
 
