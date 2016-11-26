@@ -17,7 +17,7 @@
 
 package org.apache.spark.sql.execution.datasources.jdbc
 
-import java.sql.{Connection, Driver, DriverManager, PreparedStatement}
+import java.sql.{Connection, Driver, DriverManager, PreparedStatement, SQLException}
 import java.util.Properties
 
 import scala.collection.JavaConverters._
@@ -55,7 +55,7 @@ object JdbcUtils extends Logging {
       DriverManager.getDriver(url).getClass.getCanonicalName
     }
     () => {
-      userSpecifiedDriverClass.foreach(DriverRegistry.register)
+      DriverRegistry.register(driverClass)
       val driver: Driver = DriverManager.getDrivers.asScala.collectFirst {
         case d: DriverWrapper if d.wrapped.getClass.getCanonicalName == driverClass => d
         case d if d.getClass.getCanonicalName == driverClass => d
@@ -289,7 +289,7 @@ object JdbcUtils extends Logging {
       }
       val stmt = insertStatement(conn, table, rddSchema, dialect)
       val setters: Array[JDBCValueSetter] = rddSchema.fields.map(_.dataType)
-          .map(makeSetter(conn, dialect, _)).toArray
+        .map(makeSetter(conn, dialect, _)).toArray
 
       try {
         var rowCount = 0
@@ -322,6 +322,17 @@ object JdbcUtils extends Logging {
         conn.commit()
       }
       committed = true
+    } catch {
+      case e: SQLException =>
+        val cause = e.getNextException
+        if (e.getCause != cause) {
+          if (e.getCause == null) {
+            e.initCause(cause)
+          } else {
+            e.addSuppressed(cause)
+          }
+        }
+        throw e
     } finally {
       if (!committed) {
         // The stage must fail.  We got here through an exception path, so
